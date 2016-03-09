@@ -43,8 +43,8 @@ habitat.all[[11]] == habitat.all[[1]]  ## These should be the same
 
 head(coord)
 
-xvar <- coord[,1]
-yvar <- coord[,2]
+xvar <- (coord[,1] - 477895.2)/1000 
+yvar <- (coord[,2] - 4905702)/1000
 
 fulldata <- lapply(seq_along(data), function(x) cbind(xvar, yvar, habitat.all[[x]], data[[x]][,8:207]))
 
