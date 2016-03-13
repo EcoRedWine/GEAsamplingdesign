@@ -314,3 +314,78 @@ for (l in 1:length(save)) {
 bar <- bar[-nrow(bar),]
 fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Test_Results/", "H9", "_RawData.csv", sep="")
 write.csv(bar, file=fname)
+
+
+## collect some stats:
+tp <- bar[bar$locus == 0,]
+fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Test_Results/", "H9", "_TruePos.csv", sep="")
+write.csv(tp, file=fname)
+
+fp <- bar[bar$locus != 0,]
+
+ord <- c("RDA","dbRDA")
+
+summary <- matrix(NA, nrow=length(dir())*4, ncol=5)
+colnames(summary) <- c("sim", "ord", "tp", "fp", "fp.sd")
+
+summary[,1] <- as.vector(sapply(dir(), function(x) rep(x,4)))
+summary[,2] <- as.vector(rep(ord,length(dir())))
+
+
+for (i in 1:length(dir())) {
+  foo <- tp[tp$sim == dir()[i],]
+  baz <- fp[fp$sim == dir()[i],]
+  
+  for (j in 1:length(ord)) {
+    
+    # true positives    
+    bar <- foo[foo$ord == ord[j],]
+    bar1 <- bar[!duplicated(bar$rep),]
+    rowindex <- (i-1)*4
+    summary[j+rowindex,3] <- nrow(bar1)
+    
+    #false positives
+    qux <- baz[baz$ord == ord[j],]
+    
+    temp <- vector(mode="integer", length=10)
+    
+    for (k in 1:length(repl)) {
+      rux <- qux[qux$rep == repl[k],]
+      rux1 <- rux[!duplicated(rux$locus),] # removes any loci detected on >1 axis in same replicate
+      temp[k] <- nrow(rux1)
+    }
+    
+    summary[j+rowindex,4] <- sum(temp)
+    summary[j+rowindex,5] <- sd(temp)
+  }
+}
+
+fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Test_Results/", "H9", "_Summary.csv", sep="")
+write.csv(summary, file=fname)
+
+
+
+## save file telling how many NAs and loci removed
+
+library(gtools)
+
+save <- ls()[grep("NAs_", ls())]
+
+bar = data.frame()
+
+for (l in 1:length(save)) {
+  foo <- get(save[l])
+  foo <- as.data.frame(foo)
+  bar <- smartbind(foo, bar)
+}
+
+bar <- bar[-nrow(bar),]
+fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Test_Results/", dir(), "_NAs.csv", sep="")
+write.csv(bar, file=fname)
+
+
+
+
+
+
+
