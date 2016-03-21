@@ -1,307 +1,202 @@
+## This code will loop through all replicates for a set of 24 simulations (Gsims, H1sims, H5sims, H9sims) and 6 simulations for Nsims, with 1 missing data input file.  Keep the same file structure as when you download the files from Dryad (i.e. one folder per sim, and 10 replicate files in each folder named "R0.csv" to "R9.csv"). 
+
+
 rm(list=ls())
 
 library(raster)
 library(vegan)
 
-setwd("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/AllH9sims/")   # CHANGE THE WORKING DIRECTORY 
-dir()
-list.dir <- dir()
-length(list.dir)
+setwd("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/H9sims")
+sim <- dir()
+repl <- c(0:9)
 
-data <- lapply(list.dir, read.csv) # this takes some time 
-length(data)
-class(data)
-dim(data[[5]])
+# Begin looping through all sims in the working directory 
 
-coord <- data[[1]][,2:3]
-
-L10.files <- dir("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Surfaces_Sample/", pattern = glob2rx("L10H9*_aa.asc"))   #CHANGE THE HABITAT CONFIGURATION
-L10.files
-
-qrule = list()
-for (q in 1:10) {
-  setwd("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Surfaces_Sample/")
-  qrule[[q]] <- raster(L10.files[q])
-}
-
-qrule.rep <- rep(qrule, 24)
-plot(qrule.rep[[12]]) # just for checking 
-
-habitat = list()
-for (h in 1:length(qrule)) {
-  habitat[[h]] <- extract(qrule[[h]],coord)
-}
-
-## now there is a list of 10 habitat files 
-
-habitat.all <- rep(habitat,24)
-habitat.all[[1]] == habitat.all[[2]]   ## These should not be the same 
-habitat.all[[11]] == habitat.all[[1]]  ## These should be the same
-
-
-## Now we have a list of 240 habitat values ordered by replicate 0-9 and repeated; list of datasets with coordinates, age, sex, and snps (207 columns - need to remove snps and combine to 1 allele per locus). 
-
-head(coord)
-
-xvar <- (coord[,1] - 477895.2)/1000 
-yvar <- (coord[,2] - 4905702)/1000
-
-fulldata <- lapply(seq_along(data), function(x) cbind(xvar, yvar, habitat.all[[x]], data[[x]][,8:207]))
-
-length(fulldata)
-fulldata[[1]] == fulldata[[2]]  # should be false 
-
-## fulldata is a list of all datasets containing x and y coordinates, habitat value, and snps 
-
-## sample to 100 individuals CHANGE THE SAMPLE FILE 
-samp <- read.csv("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/sample500.csv", header=F)
-samp <- samp[,1]  
-
-sampdata <- llply(fulldata, function(x) subset(x[samp,]))
-View(sampdata[[186]])
-length(sampdata)
-dim(sampdata[[1]])
-head(sampdata[[1]])
-sampdata[[1]] == sampdata[[2]]  # should be false
-
-# extract the environmental data:
-env <- llply(sampdata, function(x) subset(x[,1:3])) 
-env <- lapply(env, function(x) scale(x,center=T, scale=T)) # scale and center env vars so they are comparable
-env <- llply(env, function(x) data.matrix(x))
-class(env[[1]])
-
-for (i in 1:240) {
-  colnames(env[[i]]) <- c("xvar","yvar","habitat")
-}
-
-# extract the genetic data: 
-
-snps <- llply(sampdata, function(x) subset(x[,4:203]))
-snps <- llply(snps, function(x) subset(x[,seq(1, 200, 2)]))
-dim(snps[[1]])
-snps[[1]] == snps[[2]]  # should be false
-View(snps[[186]])
-
-# convert to matrix
-snps_mat <- llply(snps, function(x) as.matrix(x))
-class(snps_mat[[1]])
-length(snps_mat)
-
-for (j in 1:240) {
-  colnames(snps[[j]]) <- seq(0,99,by=1)
-  colnames(snps_mat[[j]]) <- seq(0,99,by=1)
-}
-
-# generate the missing data. Here, for each matrix in the list of 240 datasets, I think we should create the NAs using the first input file for 5% missing data and run the RDA/dbRDA analysis, then go back to the top and re run for 10% and so on. 
-
-## remove NA individuals
-## change data to NAs 
-## impute the missing data (mean)
-## scale 
-## vegdist (bray)
-
-
-## TEST ##
-# table_missing <- list()
-# new_list <- list()
-
-# for (i in 1:length(snps_mat)) {
-#   allsnps <- snps_mat[[i]]
-#   for (j in 1:length(missing_files)) {
-#     missing <- read.csv(missing_files[j],header=FALSE)
-#     missing <- missing[,1]  # change to a vector 
-#     new_snp_mat <- allsnps
-#     new_snp_mat[missing] <- NA
-#     table_missing[[j]] <- table(new_snp_mat[,1], useNA = "always")
-#   }
-#   new_list[[i]] <- ldply(table_missing, data.frame)
-# }
-
-## REAL DATA ##
-
-setwd("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/Input Files /")
-
-#Read in the missing data input files (4 at a time)	CHANGE INPUT FILE 
-missing_files <- list.files("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/Input Files /", pattern = glob2rx("random_*_500.csv"), full.names = F, recursive = F) 
-missing_files
-
-for (i in 1:length(snps_mat)) {
-  allsnps <- snps_mat[[i]]
-  missing <- read.csv(missing_files[1],header=FALSE)  # just the first missing data input file 
-  missing <- missing[,1]  # change to a vector 
-  new_snp_mat <- allsnps
-  new_snp_mat[missing] <- NA 
-  snps_mat[[i]] <- new_snp_mat
-}
-
-num_missing <- ldply(snps_mat, function(x) table(x,useNA='always'))
-num_missing
-
-# remove NA individuals 
-
-setwd("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/AllH9sims/")
-tempnames <- list()
-snps_test <- snps_mat
-View(snps_test[[186]])
-
-for (j in 1:length(snps_test)) {
-  subsetNA <- apply(snps_test[[j]],1,function(x) length(unique(x))>1) ## applied to rows (NAs)
-  snps_test[[j]] <- snps_test[[j]][subsetNA,]
-  env[[j]] <- env[[j]][subsetNA,]
-  tempnames[[j]] <- subsetNA
-}
-
-# We know that dataset 186 in H9 sims has a missing individual 
-tempnames[[186]][213]  # == FALSE
-dim(env[[186]])
-dim(snps_test[[186]])
-
-# check final # individuals:
-dir()
-list.dir <- dir()
-messy <- list()
-
-for (l in 1:length(snps_test)) {
-  dims <- dim(snps_test[[l]])
-  messy[[l]] <- cbind(list.dir[l], dims[1], dims[2], names(which(tempnames[[l]]==FALSE)))
-}
-
-NA_inds <- ldply(messy, data.frame)
-colnames(NA_inds) <- c("sim","#indiv","#loci","NA individual")
-write.csv(NA_inds, "/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Test_Results/H9_individual_NAs.csv")
-
-dim(snps_test[[186]])  # for H9S50D03-rep05, should be 499 rows
-
-dim(snps_test[[186]])
-dim(snps_mat[[186]])
-
-snps_mat <- snps_test
-dim(snps_mat[[186]])
-
-# impute missing data
-# replace NAs with colMeans 
-
-colMeans(snps_mat[[2]], na.rm = TRUE)
-mean(snps_mat[[1]][,1], na.rm=TRUE)
-
-for (i in 1:length(snps_mat)) {
-  cM <- colMeans(snps_mat[[i]], na.rm =TRUE)
-  indx <- which(is.na(snps_mat[[i]]), arr.ind=TRUE)
-  snps_mat[[i]][indx] <- cM[indx[,2]]
-  snps_mat[[i]]
-}
-
-snps_mat[[1]][,1]
-
-#################
-## ordinations ##
-#################
-
-length(snps_mat)
-
-for (s in 1:length(snps_mat)) {
-  
-  snps.scale <- scale(snps_mat[[s]], center = TRUE, scale = TRUE)     ## scale and center for RDA 
-  snps.bray <- vegdist(snps_mat[[s]], method = 'bray')                ## bray-curtis distance for dbRDA
-  
-  ##  RDA  ##
-  snp.rda <- rda(snps.scale, env[[s]], scale=F)
-  snp.rda.sum <- summary(snp.rda)
-  snpload.rda <- snp.rda.sum$species[,1:3]
-  
-  ##  dbRDA  ##
-  snp.dbrda <- capscale(snps.bray ~ env[[s]], comm=snps_mat[[s]])  # RDA on a PCoA
-  snp.dbrda.sum <- summary(snp.dbrda)
-  snpload.dbrda <- snp.dbrda.sum$species[,1:3]   # just like in RDA
-  rownames(snpload.dbrda) <- colnames(snps_mat[[s]])
-  
-  #### DETECT OUTLIERS 
-  
-  tests <- list(snpload.rda, snpload.dbrda)
-  
-  test.names <- c("rda","dbrda")
-  
-  for (i in 1:length(tests)) {
+for (s in 1:length(sim)) {
+  for (r in 1:length(repl)) {
     
-    for (j in 1:3) {                                    
-      x <- tests[i]
-      x <- matrix(unlist(x), ncol = 3)
-      rownames(x) <- colnames(snps_mat[[s]])
-      x <- x[,j]
-      lims <- mean(x) + c(-1, 1) * 3 * sd(x)         
-      out <- x[x < lims[1] | x > lims[2]]
+    # read in the habitat files; CHANGE HERE FOR H1, H5, OR H9
+    # R1 goes with sim rep0
+    fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Surfaces_Sample/L10H9R",r,"_aa.asc", sep="")
+    qrule <- raster(fname)                                
+    
+    fname1 <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/H9sims/",sim[s],"/R",repl[r],".csv", sep="")
+    data <- read.csv(fname1)
+    
+    coord <- data[,2:3]
+    habitat <- extract(qrule,coord)
+    
+    xvar <- (data[,2] - 477895.2)/1000         # convert UTM - subtract corner coordinate and /1000 to convert from m to km
+    yvar <- (data[,3] - 4905702)/1000 
+    
+    fulldata <- cbind(xvar, yvar, habitat, data[,8:207])
+    
+    # CHANGE samp FOR 100 OR 500 INDIVIDUAL SAMPLE SIZES 
+    samp <- read.csv("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/sample500.csv", header=F)
+    samp <- samp[,1]  
+    
+    sampdata <- fulldata[samp,]
+    
+    env <- sampdata[,1:3] 
+    env <- scale(env, center=T, scale=T) # scale and center env vars so they are comparable
+    env <- data.matrix(env)
+    colnames(env)<-c("xvar","yvar","habitat")
+    
+    ## fix the snp dataset
+    snps <- sampdata[,4:203]
+    snps <- snps[,seq(1, ncol(snps), 2)]
+    colnames(snps) <- seq(0, 99, by=1)
+    snps <- data.matrix(snps)
+    
+    ## enter NAs; CHANGE MISSING DATA TYPE BY CHANGING random TO adaptive OR neutral, AND 500 to 100 
+    missing_files <- list.files("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/Input Files /", pattern = glob2rx("random_*_500.csv"), full.names = F, recursive = F) 
+    
+    # CHANGE missing_files 1-4  
+    missing <- read.csv(paste0("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/Input Files /", missing_files[1]),header=FALSE)  # just the first missing data input file; change [1] for 1-4 
+    missing <- missing[,1]  # change to a vector 
+    snps[missing] <- NA
+    
+    # this removes NA rows (individuals) from both snp and env datasets; there are a few replicates where NA individuals so there will be 499 instead of 500 individuals 
+    subsetNA <- apply(snps,1,function(x) length(unique(x))>1)
+    snps <- snps[subsetNA,]                                      ## applied to rows (NAs)
+    env <- env[subsetNA,] 
+    
+    # remove monomorphic snps
+    subsetMM <- apply(snps,2,function(x) length(unique(x))>1)
+    snps <- snps[,subsetMM]                                       ## applied to columns (monomorphic snps)
+    
+    # check which loci have been removed & final # individuals
+    tempname <- names(subsetMM)
+    dims <- dim(snps)
+    ind_missing <- cbind(sim[s], repl[r], dims[1], dims[2], tempname[subsetMM==F])
+    fname <- paste("NAinds_", sim[s], repl[r], sep="")
+    assign(fname, ind_missing)
+    
+    snps_missing <- cbind(sim[s],repl[r],length(which(is.na(snps)==TRUE)))
+    fname <- paste("NAsnps_", sim[s], repl[r], sep="")
+    assign(fname, snps_missing)
+    
+    # impute missing data
+    # replace NAs with colMeans 
+    
+    colMeans(snps, na.rm = TRUE)
+    mean(snps[,1], na.rm=TRUE)
+    
+    cM <- colMeans(snps, na.rm =TRUE)
+    indx <- which(is.na(snps), arr.ind=TRUE)
+    snps[indx] <- cM[indx[,2]]
+    snps[,1]
+    
+    ## format the snp data
+    snps.scale <- scale(snps, center=T, scale=T)  ## scale and center for PCA/RDA
+    snps.bray <- vegdist(snps, method="bray")  ## bray-curtis distance for PCoA and dbRDA
+    
+    
+    ##  RDA  ##
+    snp.rda <- rda(snps.scale, env, scale=F)
+    snp.rda.sum <- summary(snp.rda)
+    snpload.rda <- snp.rda.sum$species[,1:3]
+    
+    ##  dbRDA  ##
+    snp.dbrda <- capscale(snps.bray ~ env, comm=snps)  # RDA on a PCoA
+    snp.dbrda.sum <- summary(snp.dbrda)
+    snpload.dbrda <- snp.dbrda.sum$species[,1:3]   # just like in RDA
+    rownames(snpload.dbrda) <- colnames(snps)
+    
+    
+    ## detect outliers ##
+    
+    tests <- list(snpload.rda, snpload.dbrda)
+    
+    test.names <- c("rda","dbrda")
+    
+    for (i in 1:length(tests)) {
       
-      if (length(out) > 0) {
-        names <- as.numeric(names(out))                    
-        axis <- rep(j, length(out))
-        outdata <- t(rbind(axis, names, as.numeric(out)))
+      for (j in 1:3) {                                    
+        x <- tests[i]
+        x <- matrix(unlist(x), ncol = 3)
+        rownames(x) <- colnames(snps)
+        x <- x[,j]
+        lims <- mean(x) + c(-1, 1) * 3 * sd(x)         
+        out <- x[x < lims[1] | x > lims[2]]
         
-        snpcors <- matrix(NA, nrow=length(names), ncol=6)
-        
-        for (k in 1:length(names)) {
-          outlocus <- names[k] + 1   # to access correct column in snp dataframe
+        if (length(out) > 0) {
+          names <- as.numeric(names(out))                    
+          axis <- rep(j, length(out))
+          outdata <- t(rbind(axis, names, as.numeric(out)))
           
-          if (ncol(snps_mat[[s]]) == 100) { 
-            outsnp <- snps_mat[[s]][,outlocus]
-          } else if (ncol(snps_mat[[s]]) == 99) {
-            outsnp <- outsnp[!is.na(outsnp)] # remove NA individuals, if any
-          }  
+          snpcors <- matrix(NA, nrow=length(names), ncol=6)
           
-          corr.x <- cor.test(outsnp, env[[s]][,1])
-          snpcors[k,1] <- corr.x$estimate
-          snpcors[k,2] <- corr.x$p.value
+          for (k in 1:length(names)) {
+            outlocus <- names[k] + 1   # to access correct column in snp dataframe
+            
+            if (ncol(snps) == 100) { 
+              outsnp <- snps[,outlocus]
+            } else if (ncol(snps) == 99) {
+              outsnp <- newsnps[,outlocus] # use snps matrix without monomorphic removed
+              outsnp <- outsnp[!is.na(outsnp)] # remove NA individuals, if any
+            }  
+            
+            corr.x <- cor.test(outsnp, env[,1])
+            snpcors[k,1] <- corr.x$estimate
+            snpcors[k,2] <- corr.x$p.value
+            
+            corr.y <- cor.test(outsnp, env[,2])
+            snpcors[k,3] <- corr.y$estimate
+            snpcors[k,4] <- corr.y$p.value
+            
+            corr.h <- cor.test(outsnp, env[,3])
+            snpcors[k,5] <- corr.h$estimate
+            snpcors[k,6] <- corr.h$p.value
+          }
           
-          corr.y <- cor.test(outsnp, env[[s]][,2])
-          snpcors[k,3] <- corr.y$estimate
-          snpcors[k,4] <- corr.y$p.value
-          
-          corr.h <- cor.test(outsnp, env[[s]][,3])
-          snpcors[k,5] <- corr.h$estimate
-          snpcors[k,6] <- corr.h$p.value
+          outdata <- cbind(outdata, snpcors)
+          fname <- paste(test.names[i],j, sep="")
+          assign(fname, outdata)
         }
-        
-        outdata <- cbind(outdata, snpcors)
-        fname <- paste(test.names[i],j, sep="")
-        assign(fname, outdata)
-      }
-      else if (length(out) == 0) {
-        fname <- paste(test.names[i],j, sep="")
-        assign(fname, NA)
-      }
+        else if (length(out) == 0) {
+          fname <- paste(test.names[i],j, sep="")
+          assign(fname, NA)
+        }
+      }    
       
     }
     
+    out.rda <- rbind(rda1, rda2, rda3)
+    out.rda <- as.data.frame(out.rda)
+    label0 <- rep("RDA", nrow(out.rda))
+    label1 <- rep(sim[s], nrow(out.rda))
+    label2 <- rep(repl[r], nrow(out.rda))
+    out.rda <- cbind(label0,label1,label2,out.rda)
+    out.rda <- out.rda[complete.cases(out.rda),]
     
+    out.dbrda <- rbind(dbrda1, dbrda2, dbrda3)
+    out.dbrda <- as.data.frame(out.dbrda)
+    label0 <- rep("dbRDA", nrow(out.dbrda))
+    label1 <- rep(sim[s], nrow(out.dbrda)) 
+    label2 <- rep(repl[r], nrow(out.dbrda))
+    out.dbrda <- cbind(label0,label1,label2,out.dbrda)
+    out.dbrda <- out.dbrda[complete.cases(out.dbrda),]
     
-  }    
-  out.rda <- rbind(rda1, rda2, rda3)
-  out.rda <- as.data.frame(out.rda)
-  label0 <- rep("RDA", nrow(out.rda))
-  label1 <- rep(dir()[s], nrow(out.rda))
-  out.rda <- cbind(label0,label1,out.rda)
-  out.rda <- out.rda[complete.cases(out.rda),]
-  
-  out.dbrda <- rbind(dbrda1, dbrda2, dbrda3)
-  out.dbrda <- as.data.frame(out.dbrda)
-  label0 <- rep("dbRDA", nrow(out.dbrda))
-  label1 <- rep(dir()[s], nrow(out.dbrda))
-  out.dbrda <- cbind(label0,label1,out.dbrda)
-  out.dbrda <- out.dbrda[complete.cases(out.dbrda),]
-  
-  #outs <- out.rda
-  outs <- rbind(out.rda, out.dbrda)
-  
-  if (nrow(outs) > 0) {   
-    colnames(outs) <- c("ord","sim","axis","locus","loading", "x-corr", "x-pval", "y-corr", "y-pval", "h-corr", "h-pval")
-    fname <- paste("out_", dir()[s], sep="")
-    assign(fname,outs)  
+    outs <- rbind(out.rda, out.dbrda)
+    
+    if (nrow(outs) > 0) {   
+      colnames(outs) <- c("ord","sim","rep", "axis","locus","loading", "x-corr", "x-pval", "y-corr", "y-pval", "h-corr", "h-pval")
+      fname <- paste("out_", sim[s],"_R",repl[r], sep="")
+      assign(fname,outs)  
+    }
+    
   }
-  
 }
 
 
+## save output; there will be 5 output files in total
+# 1. Raw Data
+# 2. True Positives 
+# 3. Summary file 
+# 4. Number of individuals after removing NA individuals 
+# 5. Number of snps converted to NAs 
 
-## save output!
 save <- ls()[grep("out_", ls())]
 
 bar = NA
@@ -312,36 +207,35 @@ for (l in 1:length(save)) {
 }
 
 bar <- bar[-nrow(bar),]
-fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Test_Results/", "H9", "_RawData.csv", sep="")
+fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/H9sims_output/", sim[s], "_random5percent_500ind_RawData.csv", sep="")
 write.csv(bar, file=fname)
 
 
-## collect some stats:
+## true positives:
 tp <- bar[bar$locus == 0,]
-fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Test_Results/", "H9", "_TruePos.csv", sep="")
+fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/H9sims_output/", sim[s], "_random5percent_500ind_TruePos.csv", sep="")
 write.csv(tp, file=fname)
 
+# summary of true and false positives
 fp <- bar[bar$locus != 0,]
-
 ord <- c("RDA","dbRDA")
-
-summary <- matrix(NA, nrow=length(dir())*4, ncol=5)
+summary <- matrix(NA, nrow=length(sim)*2, ncol=5)
 colnames(summary) <- c("sim", "ord", "tp", "fp", "fp.sd")
 
-summary[,1] <- as.vector(sapply(dir(), function(x) rep(x,4)))
-summary[,2] <- as.vector(rep(ord,length(dir())))
+summary[,1] <- as.vector(sapply(sim, function(x) rep(x,2)))
+summary[,2] <- as.vector(rep(ord,length(sim)))
 
 
-for (i in 1:length(dir())) {
-  foo <- tp[tp$sim == dir()[i],]
-  baz <- fp[fp$sim == dir()[i],]
+for (i in 1:length(sim)) {
+  foo <- tp[tp$sim == sim[i],]
+  baz <- fp[fp$sim == sim[i],]
   
   for (j in 1:length(ord)) {
     
     # true positives    
     bar <- foo[foo$ord == ord[j],]
     bar1 <- bar[!duplicated(bar$rep),]
-    rowindex <- (i-1)*4
+    rowindex <- (i-1)*2
     summary[j+rowindex,3] <- nrow(bar1)
     
     #false positives
@@ -360,16 +254,15 @@ for (i in 1:length(dir())) {
   }
 }
 
-fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Test_Results/", "H9", "_Summary.csv", sep="")
+fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/H9sims_output/", sim[s], "_random5percent_500ind_Summary.csv", sep="")
 write.csv(summary, file=fname)
 
 
-
-## save file telling how many NAs and loci removed
+## save file telling how many NA individuals removed 
 
 library(gtools)
 
-save <- ls()[grep("NAs_", ls())]
+save <- ls()[grep("NAinds_", ls())]
 
 bar = data.frame()
 
@@ -380,12 +273,25 @@ for (l in 1:length(save)) {
 }
 
 bar <- bar[-nrow(bar),]
-fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Test_Results/", dir(), "_NAs.csv", sep="")
+colnames(bar) <- c("sim","repl","num inds", "loci")
+rownames(bar) <- seq(1,nrow(bar),1)
+fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/H9sims_output/", sim[s], "_random5percent_500ind_NAinds.csv", sep="")
 write.csv(bar, file=fname)
 
+## save file telling how many snps are NA
 
+save <- ls()[grep("NAsnps_", ls())]
 
+bar = data.frame()
 
+for (l in 1:length(save)) {
+  foo <- get(save[l])
+  foo <- as.data.frame(foo)
+  bar <- smartbind(foo, bar)
+}
 
-
-
+bar <- bar[-nrow(bar),]
+colnames(bar) <- c("sim","repl","num NA snps")
+rownames(bar) <- seq(1, nrow(bar), 1)
+fname <- paste("/Users/AmandaXuereb/Documents/PhD/LG_course_project_2016/Simulations/H9sims_output/", sim[s], "_random5percent_500ind_NAsnps.csv", sep="")
+write.csv(bar, file=fname)
